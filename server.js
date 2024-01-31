@@ -2,10 +2,20 @@
 
 const express = require('express');
 const passport = require('passport')
-const LocalStrategy = require('passport-local').Strategy;
 const session = require('express-session');
-const bycrpt = require('bcrypt');
+const mongoose = require('mongoose')
+const connectEnsureLogin = require('connect-ensure-login');
+const bodyParser = require('body-parser');
+const userModel = require('./models/users');
 
+
+require('dotenv').config();
+
+const db = require('./db');
+const PORT = 3000;
+const MONGODB_URL = process.env.MONGODB_URL;
+
+// express app instance
 const app = express();
 
 // Express middleware for parsing JSON requests.
@@ -13,74 +23,90 @@ app.use(express.json());
 
 // Express session middleware
 app.use(session({
-    secret: 'my-secret-key',
+    secret: process.env.SESSION_SECRET,
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: true,
+    cookie: {maxAge: 60*60*1000} // 1 hour
 }));
 
-
 // Passport Initialization
+app.use(bodyParser.urlencoded({ extended: false }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Dummy user database
-const users = [{ id: 1, username: 'user1', password: '$2b$10$rcMwT...' }];
+passport.use(userModel.createStrategy());  // use the user model to create the strategy
 
-// Passport local strategy configuration
-passport.use(new LocalStrategy(
-    (username, password, done) => {
-        const user = users.find(u => u.username === username);
-        if (!user){
-            return done(null, false, {message: 'Incorrect username.'});
-        }
-        bycrpt.compare(password, user.password, (err, res) => {
-            if (res){
-                return done(null, user);
-            } else {
-                return done(null, false, {message: 'Incorrect password'});
-            }
-        });
-    }
-));
+// Serialize and deserialize the user object to and from session.
+passport.serializeUser(userModel.serializeUser());
+passport.deserializeUser(userModel.deserializeUser());
 
-// Serialize and deserialize user for session management
-passport.serializeUser((user, done) =>{
-    done(null, user.id);
+app.set('views', 'views');
+app.set('view engine', 'ejs');
+
+
+// render profile page
+app.get('/profile', (req, res) => {
+    res.render('profile');
+});
+
+// renders the homepage
+app.get('/', (req, res) => {
+    res.render('index');
+});
+
+// renders the login page
+app.get('/login', (req, res) => {
+    res.render('login');
+});
+
+// renders the signup
+app.get('/signup', (req, res) => {
+    res.render('signup');
+});
+
+// handles the signup request of new users
+app.post('/signup', (req, res) => {
+    const user = req.body;
+    userModel.register(new userModel({ username: user.username }),
+     user.password, (err, user) => {
+        if (err) {
+            console.log(err);
+            res.status(400).send(err)
+        } else {
+            passport.authenticate('local')(req, res, () => {
+                res.redirect('/books');
+    }); 
+   }})
 })
 
-passport.deserializeUser((id, done) => {
-    const user = users.find(u => u.id === id);
-    done(null, user);
+// Handles the login request for exisiting users
+app.post('/login', passport.authenticate('local', {failureRedirect: '/login'}),
+     (req, res) => { res.redirect('books')
+})
+
+// Handles the logout request
+app.post('/logout', (req, res) => {
+    req.logout();
+    res.redirect('/');
 });
 
-// Routes
-app.post('/login',
-    passport.authenticate('local', {failureRedirect: '/login-failure'}),
-    (req, res) => {
-    res.redirect('/dashboard'); // Redirect on successful login
-});
+// catch error middleware
+app.use((err, req, res, next) => {
+    console.log(err);
+    res.status(500).send("something broke!");
+})
 
-app.get('/dashboard', 
-    isAuthenticated,
-    (req, res) => {
-    res.send(`Welcome, ${req.user.username}!`)
-}
-);
+// connect to the database using mongoose
+mongoose
+.connect(MONGODB_URL)
+.then(() => {
+    // The express server should only run when the database is connected
+    console.log("App connected to database")
+    app.listen(PORT, function() {
+        console.log(`App is listening to port ${PORT}`)
+    });
 
-app.get('/login-failure', (req, res) => {
-    res.send('Login failed. Please try again.');
-});
-
-// Custom middleware to check if the user is authenticated
-function isAuthenticated(req, res, next){
-    if (req.isAuthenticated()){
-        return next();
-    }
-    res.redirect('/login');
-}
-
-// start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+})
+.catch((error) => {
+    console.log(error);
 });
