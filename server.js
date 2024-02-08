@@ -7,11 +7,10 @@ const mongoose = require('mongoose')
 const connectEnsureLogin = require('connect-ensure-login');
 const bodyParser = require('body-parser');
 const userModel = require('./models/users');
-
+const FarmerRoute = require('./routes/farmerRoutes')
 
 require('dotenv').config();
 
-const db = require('./db');
 const PORT = 3000;
 const MONGODB_URL = process.env.MONGODB_URL;
 
@@ -44,11 +43,10 @@ app.set('views', 'views');
 app.set('view engine', 'ejs');
 
 
-// render profile page
-app.get('/profile', (req, res) => {
-    res.render('profile');
+// render market page
+app.get('/market', connectEnsureLogin.ensureLoggedIn(), (req, res) => {
+    res.render('market');
 });
-
 // renders the homepage
 app.get('/', (req, res) => {
     res.render('index');
@@ -64,6 +62,9 @@ app.get('/signup', (req, res) => {
     res.render('signup');
 });
 
+// handles farmers api routes
+app.use('/api/farmers', FarmerRoute)
+
 // handles the signup request of new users
 app.post('/signup', (req, res) => {
     const user = req.body;
@@ -74,14 +75,14 @@ app.post('/signup', (req, res) => {
             res.status(400).send(err)
         } else {
             passport.authenticate('local')(req, res, () => {
-                res.redirect('/books');
+                res.redirect('/login');
     }); 
    }})
 })
 
 // Handles the login request for exisiting users
 app.post('/login', passport.authenticate('local', {failureRedirect: '/login'}),
-     (req, res) => { res.redirect('books')
+     (req, res) => { res.redirect('market')
 })
 
 // Handles the logout request
